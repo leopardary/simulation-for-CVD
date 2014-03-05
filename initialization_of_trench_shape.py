@@ -5,8 +5,14 @@ from scipy.integrate import dblquad
 import matplotlib.pyplot as plt
 import math
 
+
 class Nodes:
-    def __init__(self,d=100.0, N=100, alpha=90.0, AR=10, K_number=10, Sc_surface=1):    #currently the trench class only supports side wall angle smaller than 90 degree.
+    '''
+    The total number of nodes of the trench is 2*N+21 if the trench is V shape, or 3*N+21 if the trench has flat bottom.
+    The trench has 10 nodes outside the trench on each side, nodes number [0 - 9] and [11+2N - 2N+20] if it is V shape, or [0-9] and [11+3N - 20+3N] if it has flat bottom.
+    The trench left wall is [10:9+N], including the trench edge. Bottom center is 10+N or 10+N+N/2. The right wall is [11+N:10+2N] or [11+2N:10+3N]
+    '''
+    def __init__(self,d=100.0, N=50, alpha=90.0, AR=10, K_number=10, Sc_surface=1):    #currently the trench class only supports side wall angle smaller than 90 degree. N stands for the number of nodes on one side of the trench wall.
         self.y_position = []    #x index is zero for the nodes on this cross-section of trench
         self.z_position = []
         self.psi_angle = []
@@ -17,12 +23,31 @@ class Nodes:
         self.K_number=K_number  #this is the Knudsen number for the trench under certain pressure condition
         self.Sc_surface=Sc_surface  #this is the sticking coefficient on the surface outside the trench.
 
-        self.y_position.extend(np.linspace(-d,-d/2,N,endpoint=True)) #building the initial nodes for the bare trench
-        self.z_position.extend(np.zeros(N))
-        self.psi_angle.extend(np.ones(N)*90)
-        step = d/2/(N-1)
+        out_trench_nodes=10
+        wall_trench_nodes=N
+        bottom_trench_nodes=N/2  #this is the number of nodes on one half side of the bottom, if there is, excluding the center point.
+
+        self.y_position.extend(np.linspace(-d,-d/2,out_trench_nodes,endpoint=False)) #building the initial nodes for the bare trench. Assuming extending the trench outside from -d/2 to -d, and assign 10 nodes to it.
+        self.z_position.extend(np.zeros(out_trench_nodes))
+        self.psi_angle.extend(np.ones(out_trench_nodes)*90)
+
+        #step = d/2/(N-1)
         if np.tan(alpha/180*np.pi)<2*AR:    #the AR given is too large, and the trench is a 'V' shape, no flat part is included at the bottom
-            L = d/2/np.cos(alpha/180*np.pi)    #L is the length of the trench wall
+            #L = d/2/np.cos(alpha/180*np.pi)    #L is the length of the trench wall
+            Depth=d/2/np.tan(alpha/180*np.pi)   #Depth is the depth of the trench in the central point.
+            self.y_position.extend(np.linspace(-d/2,0,wall_trench_nodes,endpoint=False))    #this is for the left side wall
+            self.y_position.extend([0])     #this is for the middle point, the apex of the trench
+            self.y_position.extend(np.linspace(d/2,0,wall_trench_nodes,endpoint=False)[::-1])     #this is for the right side of trench wall
+
+            self.z_position.extend(np.linspace(0,-Depth,wall_trench_nodes,endpoint=False))  #this is for the z indices for the nodes on the left side of trench
+            self.z_position.extend([-Depth])    #this is the z index for the central apex
+            self.z_position.extend(np.linspace(0,-Depth,wall_trench_nodes,endpoint=False)[::-1])  #this is for the z indices for the right side of the trench
+
+            self.psi_angle.extend(np.ones(wall_trench_nodes)*(90-alpha))
+            self.psi_angle.extend([90])     # this is for the apex of the 'V' shape
+            self.psi_angle.extend(np.ones(wall_trench_nodes)*(90+alpha))
+
+            '''
             N_L=int(L/step)    #N_L is the number of points on the trench wall, while keeping relatively the same point density
             self.y_position.extend(np.linspace(-d/2,0,N_L,endpoint=False))
             self.z_position.extend(np.linspace(0,-d/2*np.tan(alpha/180*np.pi),N_L,endpoint=False))
@@ -30,7 +55,36 @@ class Nodes:
             self.y_position.extend(np.linspace(0,d/2,N_L,endpoint=True))
             self.z_position.extend(np.linspace(-d/2*np.tan(alpha/180*np.pi),0,N_L,endpoint=True))
             self.psi_angle.extend(np.ones(N_L)*(90+alpha))
+            '''
         else:    #The AR given gives a flat bottom
+            z_bottom=-d*AR
+            y_bottom=(d/2*np.tan(alpha/180*np.pi)-np.abs(z_bottom))/np.tan(alpha/180*np.pi)    #this is the y index for the bottom edge
+            self.y_position.extend(np.linspace(-d/2,-y_bottom,wall_trench_nodes,endpoint=False))
+            self.z_position.extend(np.linspace(0,z_bottom,wall_trench_nodes,endpoint=False))
+            self.psi_angle.extend(np.ones(wall_trench_nodes)*(90-alpha))
+            #self.y_position.extend([-y_bottom])     #this is to add the left corner of the trench
+            #self.z_position.extend([z_bottom])
+            self.psi_angle.extend([(90-alpha+90)/2])    #for the corner point, the normal is the average of the normals of neighboring nodes
+            self.y_position.extend(np.linspace(-y_bottom,0,bottom_trench_nodes,endpoint=False))
+            self.z_position.extend(np.ones(bottom_trench_nodes)*z_bottom)
+            self.psi_angle.extend(np.ones(bottom_trench_nodes-1)*90)
+            self.y_position.extend([0])     #this is for the central point of the bottom
+            self.z_position.extend([z_bottom])
+            self.psi_angle.extend([90])
+            self.y_position.extend(np.linspace(y_bottom,0,bottom_trench_nodes,endpoint=False)[::-1])
+            self.z_position.extend(np.ones(bottom_trench_nodes)*z_bottom)
+            self.psi_angle.extend(np.ones(bottom_trench_nodes-1)*90)
+            #self.y_position.extend([y_bottom])     #this is to add the left corner of the trench
+            #self.z_position.extend([z_bottom])
+            self.psi_angle.extend([(90+alpha+90)/2])    #for the corner point, the normal is the average of the normals of neighboring nodes
+            self.y_position.extend(np.linspace(d/2,y_bottom,wall_trench_nodes,endpoint=False)[::-1])
+            self.z_position.extend(np.linspace(0,z_bottom,wall_trench_nodes,endpoint=False)[::-1])
+            self.psi_angle.extend(np.ones(wall_trench_nodes)*(90+alpha))
+
+        self.y_position.extend(np.linspace(d,d/2,out_trench_nodes,endpoint=False)[::-1])       #this is for the outside of the trench on the right side
+        self.z_position.extend(np.zeros(out_trench_nodes))
+        self.psi_angle.extend(np.ones(out_trench_nodes)*90)
+        '''
             z_bottom=-d*AR
             y_bottom=(d/2*np.tan(alpha/180*np.pi)-np.abs(z_bottom))/np.tan(alpha/180*np.pi)    #this is the y index for the bottom edge
             L=(d/2-y_bottom)/np.cos(alpha/180*np.pi)
@@ -51,6 +105,7 @@ class Nodes:
         self.y_position.extend(np.linspace(d/2,d,N,endpoint=False))
         self.z_position.extend(np.zeros(N))
         self.psi_angle.extend(np.ones(N)*90)
+        '''
 
     def inside_trench(self, node_index=1):    #'''determine whether one node is inside the trench or not'''
         if self.z_position[node_index]<self.z_position[0]:
@@ -127,5 +182,30 @@ class Nodes:
             return [inte_result_2[0]*G, inte_result_2[1]*G]    #, inte_result_1
         else:
             return [1,0]    #if the node under consideration is outside the trench, the direct flux is assumed to be 1
+
+    def direct_flux_distribution(self):
+        index=0
+        direct_flux=np.ones(len(self.y_position))
+        while index<(math.floor(len(self.y_position)/2)+1): #calculate the left side, then the right side can be calculated by symmetry
+            temp=self.integrate_direct_flux(node_index=index)
+            direct_flux[index]=temp[0]
+            index+=1
+        while index<len(self.y_position):   #the other half can be calculated by symmetry
+            temp=direct_flux(len(self.y_position)-index-1)
+            direct_flux[index]=temp
+            index+=1
+        return direct_flux
+'''
+    def reduce_nodes_number(self, new_nodes_number=500):    # this function reduce the total number of nodes inside the trench to about new_nodes_number.
+        i=0
+        while(not self.inside_trench(i)):
+            i+=1
+        lb=i-1    #lb records the left bound of the trench
+
+        ub=len(trench.z_position)-lb-1    #ub records the right bound of the trench. The calculation is from the principle of symmetry.
+        step_gap=math.floor((ub-lb)/new_nodes_number)    #this is the approximate gap between neighboring nodes
+'''
+
+
 
 
