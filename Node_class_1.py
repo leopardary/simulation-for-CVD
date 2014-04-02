@@ -110,7 +110,7 @@ class Nodes:
         slope=cmath.phase(self.position[node_index2]-self.position[node_index1])    #from a center_position to a node position
         return slope/np.pi*180.0    #the angle between index1 to index2 and x axis
 
-    def find_shadowing_point(self, node_index=1):    #to find the two points that defines the window of entrance flux to the current node, if it is inside the trench
+    def center_find_shadowing_point(self, node_index=1):    #to find the two points that defines the window of entrance flux to the current node, if it is inside the trench
         i=0
         while(not self.Node_inside_trench(i)):
             i+=1
@@ -130,13 +130,50 @@ class Nodes:
             r_index=0
             i=lb
             while(i<=node_index and self.position[i].imag>self.center_positions[node_index].imag):#the ith node should be on the left side of node_index and its depth should be higher than node_index
-                slope_l=self.Node_connecting_slope(node_index,i)
+                slope_l=self.center_connecting_slope(node_index,i)
                 if l_slope_min>slope_l:
                     l_slope_min=slope_l
                     l_index=i
                 i+=1
             j=ub
             while(j>node_index and self.position[j].imag>self.center_positions[node_index].imag):
+                slope_r=self.center_connecting_slope(node_index,j)
+                if r_slope_max<slope_r:
+                    r_slope_max=slope_r
+                    r_index=j
+                j-=1
+            return [l_slope_min, r_slope_max,l_index,r_index]#the first two items are the slopes while the last two items are indices of the shadowing points
+        else:
+            print "This node is not inside the trench."
+            return 0
+
+    def Node_find_shadowing_point(self, node_index=1):    #to find the two points that defines the window of entrance flux to the current node, if it is inside the trench
+        i=0
+        while(not self.Node_inside_trench(i)):
+            i+=1
+        lb=i-1    #lb records the left bound of the trench
+
+
+        i=len(self.position)-1
+
+        while(not self.Node_inside_trench(i)):
+            i-=1
+        ub=i+1    #ub records the right bound of the trench
+
+        if self.Node_inside_trench(node_index):    #the center node under consideration is within the trench
+            l_slope_min=180
+            l_index=0
+            r_slope_max=0
+            r_index=0
+            i=lb
+            while(i<=node_index and self.position[i].imag>self.position[node_index].imag):#the ith node should be on the left side of node_index and its depth should be higher than node_index
+                slope_l=self.Node_connecting_slope(node_index,i)
+                if l_slope_min>slope_l:
+                    l_slope_min=slope_l
+                    l_index=i
+                i+=1
+            j=ub
+            while(j>node_index and self.position[j].imag>self.position[node_index].imag):
                 slope_r=self.Node_connecting_slope(node_index,j)
                 if r_slope_max<slope_r:
                     r_slope_max=slope_r
@@ -147,9 +184,18 @@ class Nodes:
             print "This node is not inside the trench."
             return 0
 
-    def find_entrance_corners(self, node_index=1):    #this function gives the 4 points on the trench entrance plane that defines the entrance area that could give flux to the node_index point inside trench. K_number is the Knudsen number, and is defined as mean_free_path/trench_width.
+    def center_find_entrance_corners(self, node_index=1):    #this function gives the 4 points on the trench entrance plane that defines the entrance area that could give flux to the node_index point inside trench. K_number is the Knudsen number, and is defined as mean_free_path/trench_width.
         if self.center_inside_trench(node_index):
-            [slope1, slope2, l_index, r_index]=self.find_shadowing_point(node_index)
+            [slope1, slope2, l_index, r_index]=self.center_find_shadowing_point(node_index)
+
+            return [self.position[l_index].real,self.position[r_index].real]
+        else:
+            print "This node is not inside the trench."
+            return 0
+
+    def Node_find_entrance_corners(self, node_index=1):    #this function gives the 4 points on the trench entrance plane that defines the entrance area that could give flux to the node_index point inside trench. K_number is the Knudsen number, and is defined as mean_free_path/trench_width.
+        if self.Node_inside_trench(node_index):
+            [slope1, slope2, l_index, r_index]=self.Node_find_shadowing_point(node_index)
 
             return [self.position[l_index].real,self.position[r_index].real]
         else:
@@ -162,7 +208,7 @@ class Nodes:
     def integrate_direct_flux(self, node_index=1):    #this function assumes infinity in x axis, and use the integrated function to calculate the direct flux, which is almost the same as integration, and is 100 times faster.
         e_1=1.0/(self.Sc_surface)
         if self.center_inside_trench(node_index):  # and yr!=np.inf and yl!=-np.inf:   #if yr or yl is inf, the node is outside the trench
-            [yl,yr]=self.find_entrance_corners(node_index=node_index)
+            [yl,yr]=self.center_find_entrance_corners(node_index=node_index)	#first calculate for the center position
             #if yr!=np.inf and yl!=-np.inf:
             M=(yr-self.center_positions[node_index].real)/((self.trench_top()-self.center_positions[node_index].imag)**2*math.sqrt((yr-self.center_positions[node_index].real)**2+(self.trench_top()-self.center_positions[node_index].imag)**2))-(yl-self.center_positions[node_index].real)/((self.trench_top()-self.center_positions[node_index].imag)**2*math.sqrt((yl-self.center_positions[node_index].real)**2+(self.trench_top()-self.center_positions[node_index].imag)**2))
             N=1.0/math.sqrt((yl-self.center_positions[node_index].real)**2+(self.trench_top()-self.center_positions[node_index].imag)**2)-1.0/math.sqrt((yr-self.center_positions[node_index].real)**2+(self.trench_top()-self.center_positions[node_index].imag)**2)
@@ -171,13 +217,13 @@ class Nodes:
             if self.Node_inside_trench(node_index):
                 M_2=(yr-self.position[node_index].real)/((self.trench_top()-self.position[node_index].imag)**2*math.sqrt((yr-self.position[node_index].real)**2+(self.trench_top()-self.position[node_index].imag)**2))-(yl-self.position[node_index].real)/((self.trench_top()-self.position[node_index].imag)**2*math.sqrt((yl-self.position[node_index].real)**2+(self.trench_top()-self.position[node_index].imag)**2))
                 N_2=1.0/math.sqrt((yl-self.position[node_index].real)**2+(self.trench_top()-self.position[node_index].imag)**2)-1.0/math.sqrt((yr-self.position[node_index].real)**2+(self.trench_top()-self.position[node_index].imag)**2)
-                C_2=e_1*(self.trench_top()-self.position[node_index].imag)*((-self.position[node_index].real*np.cos(self.center_psi[node_index]/180.0*np.pi)-(self.position[node_index].imag-self.trench_top())*np.sin(self.center_psi[node_index]/180.0*np.pi))*M/2.0+np.cos(self.center_psi[node_index]/180.0*np.pi)/2.0*(N+self.position[node_index].real*M))
+                C_2=e_1*(self.trench_top()-self.position[node_index].imag)*((-self.position[node_index].real*np.cos(self.center_psi[node_index]/180.0*np.pi)-(self.position[node_index].imag-self.trench_top())*np.sin(self.center_psi[node_index]/180.0*np.pi))*M_2/2.0+np.cos(self.center_psi[node_index]/180.0*np.pi)/2.0*(N_2+self.position[node_index].real*M_2))
             else:
-                C_2=e_1
+                C_2=e_1/2
             #for the position at the end of the segment
             M_3=(yr-self.position[node_index+1].real)/((self.trench_top()-self.position[node_index+1].imag)**2*math.sqrt((yr-self.position[node_index+1].real)**2+(self.trench_top()-self.position[node_index+1].imag)**2))-(yl-self.position[node_index+1].real)/((self.trench_top()-self.position[node_index+1].imag)**2*math.sqrt((yl-self.position[node_index+1].real)**2+(self.trench_top()-self.position[node_index+1].imag)**2))
             N_3=1.0/math.sqrt((yl-self.position[node_index+1].real)**2+(self.trench_top()-self.position[node_index+1].imag)**2)-1.0/math.sqrt((yr-self.position[node_index+1].real)**2+(self.trench_top()-self.position[node_index+1].imag)**2)
-            C_3=e_1*(self.trench_top()-self.position[node_index+1].imag)*((-self.position[node_index+1].real*np.cos(self.center_psi[node_index]/180.0*np.pi)-(self.position[node_index+1].imag-self.trench_top())*np.sin(self.center_psi[node_index]/180.0*np.pi))*M/2.0+np.cos(self.center_psi[node_index]/180.0*np.pi)/2.0*(N+self.position[node_index+1].real*M))
+            C_3=e_1*(self.trench_top()-self.position[node_index+1].imag)*((-self.position[node_index+1].real*np.cos(self.center_psi[node_index]/180.0*np.pi)-(self.position[node_index+1].imag-self.trench_top())*np.sin(self.center_psi[node_index]/180.0*np.pi))*M_3/2.0+np.cos(self.center_psi[node_index]/180.0*np.pi)/2.0*(N_3+self.position[node_index+1].real*M_3))
 
             return 1.0/6*(C_2+C_3+4*C_1)
             #else:
