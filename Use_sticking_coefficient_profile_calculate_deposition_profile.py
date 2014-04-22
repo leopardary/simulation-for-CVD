@@ -42,12 +42,16 @@ Sc_Mg_2=extrap1d(Sc_Mg_1)
 
 AR_new=np.linspace(0,60,61)
 
-#plt.plot(AR,Sc_H2O,'ro',AR_new,Sc_H2O_2(AR_new),'b-')
-#plt.plot(AR,Sc_Mg,'ro',AR_new,Sc_Mg_2(AR_new),'b-')
+plt.plot(AR,Sc_H2O,'ro',AR_new,Sc_H2O_2(AR_new),'b-')
+plt.plot(AR,Sc_Mg,'ro',AR_new,Sc_Mg_2(AR_new),'b-')
+plt.show()
+
+
+
 Flux=1
 Sc_surface=1.0/Flux
 C_sticking=0.1  #defines a constant sticking coefficient
-trench=Nodes(N=600,alpha=90.0,AR=60,Sc_surface=Sc_surface)
+trench=Nodes(N=100,alpha=90.0,AR=60,Sc_surface=Sc_surface)
 [a,b]=trench.direct_flux_distribution(3.0098*0.1*1e3,7.2362*0.1*1e3)
 plt.plot(a,'bo')
 plt.plot(b,'ro')
@@ -58,4 +62,12 @@ AR_depth=trench.trench_top()-trench_position.imag
 sticking_H2O=Sc_H2O_2(AR_depth)
 sticking_Mg=Sc_Mg_2(AR_depth)
 
-[F_H2O,F_Mg]=trench.stable_receiving_flux_vector(3.0098*0.1*1e3,7.2362*0.1*1e3,sticking_H2O,sticking_Mg)
+[F_H2O,F_Mg]=trench.stable_receiving_flux_vector(3.0098*0.1*1e4/np.sqrt(18),7.2362*0.1*1e4/np.sqrt(167.58),sticking_H2O,sticking_Mg)
+D_H2O=np.zeros(len(F_H2O))
+D_Mg=np.zeros(len(F_Mg))
+for i in range(0,len(F_H2O),1):
+    D_H2O[i]=F_H2O[i]*sticking_H2O[i]
+    D_Mg[i]=F_Mg[i]*sticking_Mg[i]
+
+plt.plot(D_H2O,'ro',D_Mg,'bo')
+plt.show()
