@@ -424,7 +424,7 @@ class Nodes:
     def receiving_flux_vector(self, Emission_vector, receiving_matrix_1, direct_flux_distribution_1):
         return Emission_vector*receiving_matrix_1+direct_flux_distribution_1    #return type is matrix, a row vector
 
-    def stable_receiving_flux_vector(self,surface_flux_1,surface_flux_2,sticking_coefficient_vector_1,sticking_coefficient_vector_2):   #here the sticking_coefficient_vector_1, and sticking_coefficient_vector_2 are sticking coefficients vectors for the two fluxes, respectively.
+    def stable_receiving_flux_vector(self,surface_flux_1,surface_flux_2,sticking_coefficient_vector_1,sticking_coefficient_vector_2,initial_flux,number_of_cycles):   #here the sticking_coefficient_vector_1, and sticking_coefficient_vector_2 are sticking coefficients vectors for the two fluxes, respectively.
         length=len(self.center_positions)
         last_receiving_flux_vector=np.zeros(length)
         current_receiving_flux_vector=np.zeros(length)
@@ -432,17 +432,20 @@ class Nodes:
         receiving_matrix=self.receiving_matrix()
 
         direct_flux_distribution=self.direct_flux_distribution(surface_flux_1,surface_flux_2)
+        #direct_flux_distribution=initial_flux
 
         '''
         for i in range(0,length,1):     #found nan values for some position
             if direct_flux_distribution_1[i]==np.nan and direct_flux_distribution_1[i-1]!=np.nan and direct_flux_distribution_1[i+1]!=np.nan:
                 direct_flux_distribution_1[i]=(direct_flux_distribution_1[i-1]+direct_flux_distribution_1[i+1])/2
         '''
-        for i in range(0,600,1):     #set the max iteration cycle to 50
-            quality=0   #converging quality factor, 1 means needing further calculation, 0 means the last_flux and current_flux are close enough
+        for i in range(0,number_of_cycles,1):     #set the max iteration cycle to 50
+            #quality=0   #converging quality factor, 1 means needing further calculation, 0 means the last_flux and current_flux are close enough
             if i==0:
-                last_receiving_flux_vector_1=direct_flux_distribution[0]
-                last_receiving_flux_vector_2=direct_flux_distribution[1]
+                #last_receiving_flux_vector_1=direct_flux_distribution[0]
+                #last_receiving_flux_vector_2=direct_flux_distribution[1]
+                last_receiving_flux_vector_1=initial_flux[0]
+                last_receiving_flux_vector_2=initial_flux[1]
             else:
                 #sticking_coefficient_vector_1=self.Sticking_coefficient_vector_1(last_receiving_flux_vector_1,last_receiving_flux_vector_2)
                 #sticking_coefficient_vector_2=self.Sticking_coefficient_vector_2(last_receiving_flux_vector_1,last_receiving_flux_vector_2)
@@ -453,6 +456,9 @@ class Nodes:
                     emission_vector_2[j]=last_receiving_flux_vector_2[j]*(1-sticking_coefficient_vector_2[j])*segment_length_vector[j]
                 current_receiving_flux_vector_1=np.array(np.matrix(emission_vector_1)*np.matrix(receiving_matrix))[0]+direct_flux_distribution[0]
                 current_receiving_flux_vector_2=np.array(np.matrix(emission_vector_2)*np.matrix(receiving_matrix))[0]+direct_flux_distribution[1]
+                last_receiving_flux_vector_1=current_receiving_flux_vector_1
+                last_receiving_flux_vector_2=current_receiving_flux_vector_2
+                '''
                 for j in range(0,length,1):
                     if np.abs((current_receiving_flux_vector_1[j]-last_receiving_flux_vector_1[j])/last_receiving_flux_vector_1[j])>0.01 or np.abs((current_receiving_flux_vector_2[j]-last_receiving_flux_vector_2[j])/last_receiving_flux_vector_2[j])>0.01:
                         quality=1
@@ -464,11 +470,16 @@ class Nodes:
                     last_receiving_flux_vector_2=current_receiving_flux_vector_2
                 else:
                     break
+                '''
+        '''
         if i>90:
             print "the receiving flux vector is not converging in ",i," cycles!"
             return [current_receiving_flux_vector_1,current_receiving_flux_vector_2]
         else:
             return [current_receiving_flux_vector_1,current_receiving_flux_vector_2]
+        '''
+        return [current_receiving_flux_vector_1,current_receiving_flux_vector_2]
+
 
     def stable_receiving_flux_vector_1(self,SC):   #with fixed sticking coefficients
         length=len(self.center_positions)
