@@ -19,8 +19,8 @@ import cmath
 
 out_trench_nodes=10
 Cr=2    #critical flux, for flux lower than this value, the sticking coefficient is about a constant, 1/Cr, for flux higher than this value, the sticking coefficient is inverse-proportional to C.
-max_node_spacing=15.0
-min_node_spacing=0.15   #maintain the min length to be 1% of the max length
+max_node_spacing=1.0/50*2
+min_node_spacing=1.0/50/2   #maintain the min length to be 1% of the max length
 
 def make_complex_vector(real, imag):
     if len(real)!=len(imag):
@@ -70,6 +70,7 @@ class Nodes:
         length=len(self.position)
         new_psi=np.zeros(length)
         for i in range(0,length/2,1):
+            #print i
             new_psi[i]=cmath.phase(self.position[i+1]-self.position[i])/np.pi*180.0+90
             new_psi[length-1-i]=180.0-new_psi[i]
         new_psi[length/2]=90.0
@@ -205,8 +206,8 @@ class Nodes:
     def trench_top(self):
         return self.position[0].imag   #returns the current trench top position in z axis, equals current thickness of the first node which is outside the trench
 
-    def integrate_direct_flux(self, node_index=1):    #this function assumes infinity in x axis, and use the integrated function to calculate the direct flux, which is almost the same as integration, and is 100 times faster.
-        e_1=1.0/(self.Sc_surface)
+    def integrate_direct_flux(self, node_index,surface_flux):    #this function assumes infinity in x axis, and use the integrated function to calculate the direct flux, which is almost the same as integration, and is 100 times faster.
+        e_1=surface_flux
         if self.center_inside_trench(node_index):  # and yr!=np.inf and yl!=-np.inf:   #if yr or yl is inf, the node is outside the trench
             [yl,yr]=self.center_find_entrance_corners(node_index=node_index)	#first calculate for the center position
             #if yr!=np.inf and yl!=-np.inf:
@@ -219,7 +220,7 @@ class Nodes:
                 N_2=1.0/math.sqrt((yl-self.position[node_index].real)**2+(self.trench_top()-self.position[node_index].imag)**2)-1.0/math.sqrt((yr-self.position[node_index].real)**2+(self.trench_top()-self.position[node_index].imag)**2)
                 C_2=e_1*(self.trench_top()-self.position[node_index].imag)*((-self.position[node_index].real*np.cos(self.center_psi[node_index]/180.0*np.pi)-(self.position[node_index].imag-self.trench_top())*np.sin(self.center_psi[node_index]/180.0*np.pi))*M_2/2.0+np.cos(self.center_psi[node_index]/180.0*np.pi)/2.0*(N_2+self.position[node_index].real*M_2))
             else:
-                C_2=e_1/2
+                C_2=e_1*(self.center_psi[node_index]+90.0)/180.0
             #for the position at the end of the segment
             M_3=(yr-self.position[node_index+1].real)/((self.trench_top()-self.position[node_index+1].imag)**2*math.sqrt((yr-self.position[node_index+1].real)**2+(self.trench_top()-self.position[node_index+1].imag)**2))-(yl-self.position[node_index+1].real)/((self.trench_top()-self.position[node_index+1].imag)**2*math.sqrt((yl-self.position[node_index+1].real)**2+(self.trench_top()-self.position[node_index+1].imag)**2))
             N_3=1.0/math.sqrt((yl-self.position[node_index+1].real)**2+(self.trench_top()-self.position[node_index+1].imag)**2)-1.0/math.sqrt((yr-self.position[node_index+1].real)**2+(self.trench_top()-self.position[node_index+1].imag)**2)
@@ -231,12 +232,12 @@ class Nodes:
         else:
             return e_1
 
-    def direct_flux_distribution(self):
+    def direct_flux_distribution(self,surface_flux):
         index=0
         length=len(self.center_positions)
         direct_flux=np.ones(length)
         while index<length/2: #calculate the left side, then the right side can be calculated by symmetry
-            temp=self.integrate_direct_flux(node_index=index)
+            temp=self.integrate_direct_flux(index,surface_flux)
             direct_flux[index]=temp
             direct_flux[length-1-index]=direct_flux[index]
             index+=1
@@ -245,7 +246,7 @@ class Nodes:
 
     def Sticking_coefficient(self, flux=1.0):
         #return (1.0/Cr)/(1.0+(flux/Cr))
-        return 0.0
+        return 0.1
 
     def Sticking_coefficient_vector(self, receiving_flux_vector):
         length=len(receiving_flux_vector)
@@ -301,35 +302,41 @@ class Nodes:
                 print q_index2_index1
                 q_index2_index1=0
             #calculate for the begining position of the current segment
-            if self.Node_inside_trench(index1):
-                P_index1_index2_1=np.matrix([[self.position[index1].real-self.center_positions[index2].real,],[self.position[index1].imag-self.center_positions[index2].imag,]])
-                q_index2_index1_1=-1*(np.array(n_index1*P_index1_index2_1)[0][0])*(np.array(n_index2*P_index1_index2_1)[0][0])*0.5*(1.0/(math.sqrt((np.array(P_index1_index2_1)[0][0])**2+(np.array(P_index1_index2_1)[1][0])**2))**3)
-                if q_index2_index1_1<0 and q_index2_index1_1>-1e-10:
-                    q_index2_index1_1=0
-                elif q_index2_index1_1<=-1e-10:
-                    print 'Encountered negtive receiving_matrix_element for Node position'
-                    print index1, index2
-                    print q_index2_index1_1
-                    q_index2_index1_1=0
+            if self.visibility(index1-1,index2):
+                if self.Node_inside_trench(index1):
+                    P_index1_index2_1=np.matrix([[self.position[index1].real-self.center_positions[index2].real,],[self.position[index1].imag-self.center_positions[index2].imag,]])
+                    q_index2_index1_1=-1*(np.array(n_index1*P_index1_index2_1)[0][0])*(np.array(n_index2*P_index1_index2_1)[0][0])*0.5*(1.0/(math.sqrt((np.array(P_index1_index2_1)[0][0])**2+(np.array(P_index1_index2_1)[1][0])**2))**3)
+                    if q_index2_index1_1<0 and q_index2_index1_1>-1e-10:
+                        q_index2_index1_1=0
+                    elif q_index2_index1_1<=-1e-10:
+                        print 'Encountered negtive receiving_matrix_element for Node position'
+                        print index1, index2
+                        print q_index2_index1_1
+                        q_index2_index1_1=0
+                else:
+                    P_index1_index2_1=np.matrix([[self.center_positions[index1].real-self.center_positions[index2].real,],[self.center_positions[index1].imag-self.center_positions[index2].imag,]])
+                    q_index2_index1_1=-1*(np.array(n_index1*P_index1_index2)[0][0])*(np.array(n_index2*P_index1_index2)[0][0])*0.5*(1.0/(math.sqrt((np.array(P_index1_index2)[0][0])**2+(np.array(P_index1_index2)[1][0])**2))**3)
+                    if q_index2_index1_1<0 and q_index2_index1>-1e-10:
+                        q_index2_index1_1=0
+                    elif q_index2_index1_1<=-1e-10:
+                        print 'Encountered negtive receiving_matrix_element for Node position'
+                        print index1, index2
+                        print q_index2_index1_1
+                        q_index2_index1_1=0
             else:
-                P_index1_index2_1=np.matrix([[self.center_positions[index1].real-self.center_positions[index2].real,],[self.center_positions[index1].imag-self.center_positions[index2].imag,]])
-                q_index2_index1_1=-1*(np.array(n_index1*P_index1_index2)[0][0])*(np.array(n_index2*P_index1_index2)[0][0])*0.5*(1.0/(math.sqrt((np.array(P_index1_index2)[0][0])**2+(np.array(P_index1_index2)[1][0])**2))**3)
-                if q_index2_index1_1<0 and q_index2_index1>-1e-10:
-                    q_index2_index1_1=0
-                elif q_index2_index1_1<=-1e-10:
-                    print 'Encountered negtive receiving_matrix_element for Node position'
-                    print index1, index2
-                    print q_index2_index1_1
-                    q_index2_index1_1=0
+                q_index2_index1_1=0
             #calculate for the ending position of the current segment
-            P_index1_index2_2=np.matrix([[self.position[index1+1].real-self.center_positions[index2].real,],[self.position[index1+1].imag-self.center_positions[index2].imag,]])
-            q_index2_index1_2=-1*(np.array(n_index1*P_index1_index2_2)[0][0])*(np.array(n_index2*P_index1_index2_2)[0][0])*0.5*(1.0/(math.sqrt((np.array(P_index1_index2_2)[0][0])**2+(np.array(P_index1_index2_2)[1][0])**2))**3)
-            if q_index2_index1_2<0 and q_index2_index1_2>-1e-10:
-                q_index2_index1_2=0
-            elif q_index2_index1_2<=-1e-10:
-                print 'Encountered negtive receiving_matrix_element for Node position'
-                print index1+1, index2
-                print q_index2_index1_2
+            if self.visibility(index1+1,index2):
+                P_index1_index2_2=np.matrix([[self.position[index1+1].real-self.center_positions[index2].real,],[self.position[index1+1].imag-self.center_positions[index2].imag,]])
+                q_index2_index1_2=-1*(np.array(n_index1*P_index1_index2_2)[0][0])*(np.array(n_index2*P_index1_index2_2)[0][0])*0.5*(1.0/(math.sqrt((np.array(P_index1_index2_2)[0][0])**2+(np.array(P_index1_index2_2)[1][0])**2))**3)
+                if q_index2_index1_2<0 and q_index2_index1_2>-1e-10:
+                    q_index2_index1_2=0
+                elif q_index2_index1_2<=-1e-10:
+                    print 'Encountered negtive receiving_matrix_element for Node position'
+                    print index1+1, index2
+                    print q_index2_index1_2
+                    q_index2_index1_2=0
+            else:
                 q_index2_index1_2=0
             return 1.0/6*(4*q_index2_index1+q_index2_index1_1+q_index2_index1_2)
 
@@ -375,14 +382,14 @@ class Nodes:
     def receiving_flux_vector(self, Emission_vector, receiving_matrix_1, direct_flux_distribution_1):
         return Emission_vector*receiving_matrix_1+direct_flux_distribution_1    #return type is matrix, a row vector
 
-    def stable_receiving_flux_vector(self):
+    def stable_receiving_flux_vector(self,surface_flux):
         length=len(self.center_positions)
         last_receiving_flux_vector=np.zeros(length)
         current_receiving_flux_vector=np.zeros(length)
         segment_length_vector=self.node_lengths()
         receiving_matrix=self.receiving_matrix()
 
-        direct_flux_distribution=self.direct_flux_distribution()
+        direct_flux_distribution=self.direct_flux_distribution(surface_flux)
 
         '''
         for i in range(0,length,1):     #found nan values for some position
@@ -416,14 +423,14 @@ class Nodes:
         else:
             return current_receiving_flux_vector
 
-    def stable_receiving_flux_vector_1(self,SC):   #with fixed sticking coefficients
+    def stable_receiving_flux_vector_1(self,SC,surface_flux):   #with fixed sticking coefficients
         length=len(self.center_positions)
         last_receiving_flux_vector=np.zeros(length)
         current_receiving_flux_vector=np.zeros(length)
         segment_length_vector=self.node_lengths()
         receiving_matrix=self.receiving_matrix()
 
-        direct_flux_distribution=self.direct_flux_distribution()
+        direct_flux_distribution=self.direct_flux_distribution(surface_flux)
 
         '''
         for i in range(0,length,1):     #found nan values for some position
@@ -458,7 +465,7 @@ class Nodes:
         else:
             return current_receiving_flux_vector
 
-    def stable_receiving_flux_vector_2(self,SC):   #with fixed sticking coefficients, taking the inverse matrix method to calculate for infinity times re-emission
+    def stable_receiving_flux_vector_2(self,SC,surface_flux):   #with fixed sticking coefficients, taking the inverse matrix method to calculate for infinity times re-emission
         length=len(self.center_positions)
         last_receiving_flux_vector=np.zeros(length)
         current_receiving_flux_vector=np.zeros(length)
@@ -468,7 +475,7 @@ class Nodes:
             receiving_matrix[i]=(1-SC)*segment_length_vector[i]*receiving_matrix[i]
 
 
-        direct_flux_distribution=self.direct_flux_distribution()
+        direct_flux_distribution=self.direct_flux_distribution(surface_flux)
         S=np.matrix(np.eye(length)-receiving_matrix).I
         current_receiving_flux_vector=np.array(np.matrix(direct_flux_distribution)*S)[0]
         return current_receiving_flux_vector
@@ -477,7 +484,7 @@ class Nodes:
     def trench_update(self, receiving_flux_vector, sticking_coefficient_vector):
         length=len(self.center_positions)
         increment_vector=np.zeros(length)
-        complex_increment_vector=np.zeros(length)
+        complex_increment_vector=np.zeros(length,'complex')
         new_position=np.zeros(length+1,'complex')
         new_y=np.zeros(length)
         new_z=np.zeros(length)
@@ -493,26 +500,29 @@ class Nodes:
         while i<(length+1)/2:
             if i>0 and i<length:
                 new_position[i]=self.position[i]+(complex_increment_vector[i]+complex_increment_vector[i-1])/2
-                new_position[length-i].real=-new_position[i].real
-                new_position[length-i].imag=new_position[i].imag
+                #new_position[length-i].real=-new_position[i].real
+                #new_position[length-i].imag=new_position[i].imag
+                new_position[length-i]=new_position[i]-2*new_position[i].real
             elif i==0:
                 new_position[i]=self.position[i]+(complex_increment_vector[i]+complex_increment_vector[length-1])/2
-                new_position[length-i].real=-new_position[i].real
-                new_position[length-i].imag=new_position[i].imag
-
+                #new_position[length-i].real=-new_position[i].real
+                #new_position[length-i].imag=new_position[i].imag
+                new_position[length-i]=new_position[i]-2*new_position[i].real
             if new_position[length-1-i].real<=new_position[i].real:   #if the symmetric points crosses over, that is the two points merged together
                 merge_point=i
                 break
             i+=1
 
-        new_position[(length+1)/2].real=0   #for the central point, assumes its growth rate is the same as its neighbor
-        new_position[(length+1)/2].imag=new_position[(length+1)/2-1].imag+(new_position[(length+1)/2-1].imag-new_position[(length+1)/2-2].imag)/(new_position[(length+1)/2-1].real-new_position[(length+1)/2-2].real)*(0-new_position[(length+1)/2-1].real)
+        #new_position[(length+1)/2].real=0   #for the central point, assumes its growth rate is the same as its neighbor
+        new_position[(length+1)/2]=complex(0,new_position[(length+1)/2-1].imag+np.tan(cmath.phase(new_position[(length+1)/2-1]-new_position[(length+1)/2-2]))*(0-new_position[(length+1)/2-1].real))  #(new_position[(length+1)/2-1].imag-new_position[(length+1)/2-2].imag)/(new_position[(length+1)/2-1].real-new_position[(length+1)/2-2].real)
 
         if merge_point==0:
             self.position=new_position
             self.renew_psi()
             self.center_positions=self.renew_center_positions()
             self.center_psi=self.renew_center_psi()
+            self.deloop()
+            self.optimize_node_length()
             #self.psi_angle=new_psi
             #self.node_optimization()
         else:
@@ -522,17 +532,150 @@ class Nodes:
             new_z_1=np.zeros(length_1)
             for j in range(0,i,1):
                 new_position_1[j]=new_position[j]
-                new_position_1[length_1-1-j].real=-new_position_1[j].real
-                new_position_1[length_1-1-j].imag=new_position_1[j].imag
+                #new_position_1[length_1-1-j].real=-new_position_1[j].real
+                #new_position_1[length_1-1-j].imag=new_position_1[j].imag
+                new_position_1[length_1-1-j]=new_position_1[j]-2*new_position_1[j].real
 
-            new_position_1[length_1/2].imag=new_position_1[length_1/2-1].imag+(new_position_1[length_1/2-1].imag-new_position_1[length_1/2-2].imag)/(new_position_1[length_1/2-1].real-new_position_1[length_1/2-2].real)*(0-new_position_1[length_1/2-1].real)
+            new_position_1[length_1/2]=complex(0,new_position_1[length_1/2-1].imag+(new_position_1[length_1/2-1].imag-new_position_1[length_1/2-2].imag)/(new_position_1[length_1/2-1].real-new_position_1[length_1/2-2].real)*(0-new_position_1[length_1/2-1].real))
             self.position=new_position_1
             self.renew_psi()
             self.center_positions=self.renew_center_positions()
             self.center_psi=self.renew_center_psi()
+            self.deloop()
+            self.optimize_node_length()
         return 0
 
+    def deloop(self):
+        length=len(self.position)
+        lm=length/2 #initialize the left most node to be the central bottom
+        while(self.position[lm-1].real<self.position[lm].real) and ((self.position[lm].real-self.position[lm-1].real)>(self.position[lm+1].real-self.position[lm].real)/2):#np.abs((cmath.phase(self.position[lm1-1]-self.position[lm1])-cmath.phase(self.position[lm1]-self.position[lm1+1]))/np.pi*180.0)<5:  #move the lm to the left most node of the bottom
+            lm-=1
+        #now the lm is the left most node of the bottom.
+        for i in range(0,length/2,1):
+            if self.Node_inside_trench(i):
+                break
+        bm=i   #now bm is the first node inside the trench
+        while(self.position[bm+1].imag<self.position[bm].imag): #and ((self.position[bm].imag-self.position[bm+1].imag)>(self.position[bm-1].imag-self.position[bm].imag)/2):#np.abs((cmath.phase(self.position[bm1+1]-self.position[bm1])-cmath.phase(self.position[bm1]-self.position[bm1-1]))/np.pi*180.0)<5:
+            bm+=1
+        #Now the bm is the bottom most node of the left wall.
 
+        if self.position[bm].real<self.position[lm].real and self.position[bm].imag>self.position[lm].imag:
+            print "there is no loop for this profile!"
+        elif bm==lm:    #if the bottom and left wall finds the same position at the left bottom corner, then that point should be removed.
+            bm-=1
+            lm+=1
+            lm1=lm
+            bm1=bm
+            M=cmath.tan(cmath.phase(self.position[lm1]-self.position[lm1+1]))
+            N=cmath.tan(cmath.phase(self.position[bm1]-self.position[bm1-1]))
+            a=((self.position[bm1].imag-self.position[lm1].imag)+M*self.position[lm1].real-N*self.position[bm1].real)/(M-N)
+            b=M*(a-self.position[lm1].real)+self.position[lm1].imag
+            new_corner=complex(a,b) #this is the position of the new corner.
+            if self.position[lm1].real<new_corner.real: #find the right node to start to cut off.
+                lm1=lm1+1   #this is the node to keep
+            if self.position[bm1].imag<new_corner.imag:
+                bm1=bm1-1
+            offset=0
+            new_node_position=[]
+            new_node_position.extend(self.position[0:bm1+1])
+            new_node_position.extend([new_corner])
+            new_node_position.extend(self.position[lm1:length-lm1])
+            new_node_position.extend([complex(-1*new_corner.real,new_corner.imag)])
+            new_node_position.extend(self.position[length-bm1-1:length-1])
+            self.position=new_node_position
+            self.renew_psi()
+            self.center_positions=self.renew_center_positions()
+            self.center_psi=self.renew_center_psi()
+        else:
+            lm1=lm
+            bm1=bm
+            while (self.node_distance(lm1,bm1)>self.node_distance(lm1+1,bm1)) : #requires the distance to bm is shorter and the direction change is not greater than 5 degree
+                lm1+=1
+            while(self.node_distance(lm1,bm1)>self.node_distance(lm1,bm1-1)):
+                bm1-=1
+            #now the lm1 and bm1 are the nearest nodes at the left bottom corner
+            M=cmath.tan(cmath.phase(self.position[lm1]-self.position[lm1+1]))
+            N=cmath.tan(cmath.phase(self.position[bm1]-self.position[bm1-1]))
+            a=((self.position[bm1].imag-self.position[lm1].imag)+M*self.position[lm1].real-N*self.position[bm1].real)/(M-N)
+            b=M*(a-self.position[lm1].real)+self.position[lm1].imag
+            new_corner=complex(a,b) #this is the position of the new corner.
+            if self.position[lm1].real<new_corner.real: #find the right node to start to cut off.
+                lm1=lm1+1   #this is the node to keep
+            if self.position[bm1].imag<new_corner.imag:
+                bm1=bm1-1
+            offset=0
+            new_node_position=[]
+            new_node_position.extend(self.position[0:bm1+1])
+            new_node_position.extend([new_corner])
+            new_node_position.extend(self.position[lm1:length-lm1])
+            new_node_position.extend([complex(-1*new_corner.real,new_corner.imag)])
+            new_node_position.extend(self.position[length-bm1-1:length-1])
+            '''
+            for i in range(bm1+1,lm1,1):
+                del self.position[i-offset]
+
+                del self.position[length-2*offset-i]
+                offset+=1
+            '''
+            self.position=new_node_position
+            self.renew_psi()
+            self.center_positions=self.renew_center_positions()
+            self.center_psi=self.renew_center_psi()
+
+    def optimize_node_length(self):
+        i=0
+        new_position=[]
+        while(i<len(self.position)/2):
+            new_position.extend([self.position[i]])
+            if self.node_distance(i,i+1)>max_node_spacing:
+                if i>0:
+                    angle=(cmath.phase(self.position[i]-self.position[i-1])+cmath.phase(self.position[i+1]-self.position[i]))/2
+                else:
+                    angle=(cmath.phase(self.position[i+1]-self.position[i]))/2
+                if i>0:
+                    length=self.node_distance(i,i+1)/2/np.cos(angle-cmath.phase(self.position[i]-self.position[i-1]))
+                else:
+                    length=self.node_distance(i,i+1)/2
+                y_index=self.position[i].real+length*np.cos(angle)
+                z_index=self.position[i].imag+length*np.sin(angle)
+                new_position.extend([complex(y_index,z_index)])  #add an additional node between i and i+1
+            if self.node_distance(i,i+1)<min_node_spacing:
+                if self.node_distance(i,i+2)>max_node_spacing:
+                    new_position.extend([(self.position[i]+self.position[i+2])/2])
+                    i+=1    #omitting the i+1 node
+                else:
+                    i+=1
+            i+=1
+        new_position.extend(new_position[::-1]-2*np.array(new_position[::-1]).real)
+        new_position.insert(len(new_position)/2,self.position[len(self.position)/2])  #add the bottom central point
+        self.position=new_position
+        self.renew_psi()
+        self.center_positions=self.renew_center_positions()
+        self.center_psi=self.renew_center_psi()
+    '''
+    def deloop_check(self):
+        check_origin=complex(0,self.trench_top()+0.5)
+        flag=0  #signifies whether the current trench profile has no loop or several dots on the same position. If so, the flag will be set to 1.
+        temp=cmath.phase(check_origin-self.position[0])
+        for i in range(1,len(self.position)/2,1):
+            current_angle=cmath.phase(check_origin-self.position[i])
+            if temp<current_angle:
+                temp=current_angle
+                continue
+            else:
+                flag=1
+                break
+        return flag
+
+    def deloop_length_optimize(self):
+        while self.deloop_check:
+            self.deloop()
+            self.optimize_node_length()
+    '''
+
+    def node_distance(self,index1,index2):
+        distance=self.position[index1]-self.position[index2]
+        return np.sqrt(distance.real**2+distance.imag**2)
 
     def node_optimization(self):    #optimize the node configuration, to more truly represent the trench shape
         changed=0   #notify whether the nodes of the trench have changed through the current optimization run
